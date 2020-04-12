@@ -14,6 +14,7 @@ import com.itzik.game.models.Bullet
 import com.itzik.game.models.DefenceBrick
 import com.itzik.game.models.Invader
 import com.itzik.game.models.PlayerShip
+import com.itzik.game.stream.SoundPlayer
 import com.itzik.game.uils.UtilsDisplay
 
 class InvadersView(
@@ -192,7 +193,7 @@ class InvadersView(
                             playerShip.position.top,
                             playerBullet.up)) {
 
-                        //soundPlayer.playSound(SoundPlayer.shootID)
+                        SoundPlayer.getSoundPlayer(context).playSound(SoundPlayer.shootID)
                     }
                 }
             }
@@ -219,6 +220,7 @@ class InvadersView(
 
             // Capture the current time
             val startFrameTime = System.currentTimeMillis()
+            gameBoard.startFrameTime = startFrameTime
 
             // Update the frame
            gameBoard.checkIsNeedUpdate(fps)
@@ -232,6 +234,9 @@ class InvadersView(
             if (timeThisFrame >= 1) {
                 fps = 1000 / timeThisFrame
             }
+
+            gameBoard.checkIsNeedMenacePlayer()
+
         }
     }
 

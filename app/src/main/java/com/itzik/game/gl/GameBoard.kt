@@ -2,10 +2,12 @@ package com.itzik.game.gl
 
 import android.content.Context
 import android.graphics.Point
+import android.graphics.RectF
 import com.itzik.game.models.Bullet
 import com.itzik.game.models.DefenceBrick
 import com.itzik.game.models.Invader
 import com.itzik.game.models.PlayerShip
+import com.itzik.game.stream.SoundPlayer
 
 class GameBoard(context: Context, size: Point) {
 
@@ -61,29 +63,29 @@ class GameBoard(context: Context, size: Point) {
     var uhOrOh: Boolean = false
     // When did we last play a menacing sound
     private var lastMenaceTime = System.currentTimeMillis()
+    var startFrameTime: Long? = null
 
 
-
-    fun getInvenvadersBullets(): List<Bullet>{
+    fun getInvenvadersBullets(): List<Bullet> {
         return invadersBullets
     }
 
 
-    fun getPlayerBullet(): Bullet{
+    fun getPlayerBullet(): Bullet {
         return playerBullet
     }
 
-    fun getBricks(): List<DefenceBrick>{
+    fun getBricks(): List<DefenceBrick> {
         return bricks
     }
 
 
-    fun getInvaders(): List<Invader>{
+    fun getInvaders(): List<Invader> {
         return invaders
     }
 
 
-    fun getPlayerShip(): PlayerShip{
+    fun getPlayerShip(): PlayerShip {
         return playerShip
     }
 
@@ -94,11 +96,15 @@ class GameBoard(context: Context, size: Point) {
         numInvaders = 0
         for (column in 0..10) {
             for (row in 0..5) {
-                invaders.add(Invader(mContext,
-                    row,
-                    column,
-                    sizeDisplay.x,
-                    sizeDisplay.y))
+                invaders.add(
+                    Invader(
+                        mContext,
+                        row,
+                        column,
+                        sizeDisplay.x,
+                        sizeDisplay.y
+                    )
+                )
 
                 numInvaders++
             }
@@ -109,11 +115,15 @@ class GameBoard(context: Context, size: Point) {
         for (shelterNumber in 0..4) {
             for (column in 0..18) {
                 for (row in 0..8) {
-                    bricks.add(DefenceBrick(row,
-                        column,
-                        shelterNumber,
-                        sizeDisplay.x,
-                        sizeDisplay.y))
+                    bricks.add(
+                        DefenceBrick(
+                            row,
+                            column,
+                            shelterNumber,
+                            sizeDisplay.x,
+                            sizeDisplay.y
+                        )
+                    )
 
                     numBricks++
                 }
@@ -126,9 +136,9 @@ class GameBoard(context: Context, size: Point) {
         }
     }
 
-    fun checkIsNeedUpdate(fps: Long){
+    fun checkIsNeedUpdate(fps: Long) {
 
-        if(paused){
+        if (paused) {
             return
         }
 
@@ -150,13 +160,44 @@ class GameBoard(context: Context, size: Point) {
                 // Move the next invader
                 invader.update(fps)
 
-                // If that move caused them to bump
-                // the screen change bumped to true
-                if (invader.position.left > sizeDisplay.x - invader.width
-                    || invader.position.left < 0) {
+                if (invader.takeAim(
+                        playerShip.position.left,
+                        playerShip.width,
+                        waves
+                    )
+                ) {
 
-                    bumped = true
+                    // If so try and spawn a bullet
+                    if (invadersBullets[nextBullet].shoot(
+                            invader.position.left
+                                    + invader.width / 2,
+                            invader.position.top, playerBullet.down
+                        )
+                    ) {
 
+                        // Shot fired
+                        // Prepare for the next shot
+                        nextBullet++
+
+                        // Loop back to the first one if we have reached the last
+                        if (nextBullet == maxInvaderBullets) {
+                            // This stops the firing of bullet
+                            // until one completes its journey
+                            // Because if bullet 0 is still active
+                            // shoot returns false.
+                            nextBullet = 0
+                        }
+                    }
+
+                    // If that move caused them to bump
+                    // the screen change bumped to true
+                    if (invader.position.left > sizeDisplay.x - invader.width
+                        || invader.position.left < 0
+                    ) {
+
+                        bumped = true
+
+                    }
                 }
             }
         }
@@ -167,11 +208,11 @@ class GameBoard(context: Context, size: Point) {
 
         // Update all the invaders bullets if active
         for (bullet in invadersBullets) {
+
             if (bullet.isActive) {
                 bullet.update(fps)
             }
         }
-
 
         // Did an invader bump into the edge of the screen
         if (bumped) {
@@ -185,18 +226,156 @@ class GameBoard(context: Context, size: Point) {
                 }
             }
         }
+
+
+
+        if (playerBullet.position.bottom < 0) {
+            playerBullet.isActive = false
+        }
+
+        // Has an invaders playerBullet
+        // hit the bottom of the screen
+        for (bullet in invadersBullets) {
+            if (bullet.position.top > sizeDisplay.y) {
+                bullet.isActive = false
+            }
+        }
+
+        // Has the player's playerBullet hit an invader
+        if (playerBullet.isActive) {
+            for (invader in invaders) {
+                if (invader.isVisible) {
+                    if (RectF.intersects(
+                            playerBullet.position,
+                            invader.position
+                        )
+                    ) {
+                        invader.isVisible = false
+
+                        SoundPlayer.getSoundPlayer(mContext).playSound(
+                            SoundPlayer.invaderExplodeID
+                        )
+
+                        playerBullet.isActive = false
+                        Invader.numberOfInvaders--
+                        score += 10
+                        if (score > highScore) {
+                            highScore = score
+                        }
+
+                        // Has the player cleared the level
+                        //if (score == numInvaders * 10 * waves) {
+                        if (Invader.numberOfInvaders == 0) {
+                            paused = true
+                            lives++
+                            invaders.clear()
+                            bricks.clear()
+                            invadersBullets.clear()
+                            prepareLevel()
+                            waves++
+                            break
+                        }
+
+                        // Don't check any more invaders
+                        break
+                    }
+                }
+            }
+        }
+
+// Has an alien playerBullet hit a shelter brick
+        for (bullet in invadersBullets) {
+            if (bullet.isActive) {
+                for (brick in bricks) {
+                    if (brick.isVisible) {
+                        if (RectF.intersects(bullet.position, brick.position)) {
+                            // A collision has occurred
+                            bullet.isActive = false
+                            brick.isVisible = false
+                            SoundPlayer.getSoundPlayer(mContext)
+                                .playSound(SoundPlayer.damageShelterID)
+                        }
+                    }
+                }
+            }
+        }
+
+// Has a player playerBullet hit a shelter brick
+        if (playerBullet.isActive) {
+            for (brick in bricks) {
+                if (brick.isVisible) {
+                    if (RectF.intersects(playerBullet.position, brick.position)) {
+                        // A collision has occurred
+                        playerBullet.isActive = false
+                        brick.isVisible = false
+                        SoundPlayer.getSoundPlayer(mContext).playSound(SoundPlayer.damageShelterID)
+                    }
+                }
+            }
+        }
+
+// Has an invader playerBullet hit the player ship
+        for (bullet in invadersBullets) {
+            if (bullet.isActive) {
+                if (RectF.intersects(playerShip.position, bullet.position)) {
+                    bullet.isActive = false
+                    lives--
+                    SoundPlayer.getSoundPlayer(mContext).playSound(SoundPlayer.playerExplodeID)
+
+                    // Is it game over?
+                    if (lives == 0) {
+                        lost = true
+                        break
+                    }
+                }
+            }
+        }
+
+
+
+
+        if (lost) {
+            paused = true
+            lives = 3
+            score = 0
+            waves = 1
+            invaders.clear()
+            bricks.clear()
+            invadersBullets.clear()
+            prepareLevel()
+        }
     }
 
 
-    fun isPlaying(): Boolean{
+    fun checkIsNeedMenacePlayer() {
+        if (!paused && ((startFrameTime!! - lastMenaceTime) > menaceInterval)) {
+
+            if (uhOrOh) {
+                // Play Uh
+                SoundPlayer.getSoundPlayer(mContext).playSound(SoundPlayer.uhID)
+
+            } else {
+                // Play Oh
+                SoundPlayer.getSoundPlayer(mContext).playSound(SoundPlayer.ohID)
+            }
+
+            // Reset the last menace time
+            lastMenaceTime = System.currentTimeMillis()
+            // Alter value of uhOrOh
+            uhOrOh = !uhOrOh
+        }
+
+    }
+
+    fun isPlaying(): Boolean {
         return playing
     }
 
-    fun setPause(pause: Boolean){
+    fun setPause(pause: Boolean) {
         paused = pause
     }
 
-    fun setPlaying(play: Boolean){
+    fun setPlaying(play: Boolean) {
         playing = play
     }
 }
